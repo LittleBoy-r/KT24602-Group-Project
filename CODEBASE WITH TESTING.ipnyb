@@ -1,0 +1,213 @@
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+import matplotlib.pyplot as plt
+import unittest
+
+# Data Cleaning
+
+# 1.1 Check information of the data set
+df = pd.read_csv('houses.csv')
+print(df.info())
+print(df.shape)
+pd.set_option('display.max_columns', None)
+print(df.head())
+
+# 1.2 Drop unwanted columns
+columns_drop = ['description', 'Nearby School', 'Nearby Mall', 'Ad List', 'Category', 'Developer', 'Address',
+                'Completion Year', 'Floor Range', 'Firm Type', 'Firm Number', 'REN Number', 'Bus Stop', 'Mall',
+                'Park', 'School', 'Hospital', 'Highway', 'Railway Station', 'Nearby Railway Station', '# of Floors',
+                'Total Units']
+
+df = df.drop(columns=columns_drop)
+
+# 1.3 Check for any NA rows and remove if necessary
+print(df.isna().sum())
+
+# 1.4 Extract only numerical values from "Property Size" column
+df['Property Size_in_sq_ft'] = df['Property Size'].str[:-6].astype(int)
+df = df.drop(columns='Property Size')
+
+# 1.5 Modify the "Facilities" column to display amount of facilities
+df['Amount of Facilities'] = df['Facilities'].apply(lambda x: 0 if x.strip() == '-' else len(x.split(',')))
+df = df.drop(columns='Facilities')
+
+# 1.6 Extract only numerical values from "price" column
+df['Price_in_RM'] = df['price'].str[2:].replace(' ', '', regex=True).astype(int)
+df = df.drop(columns='price')
+
+# 1.7 Replace '-' value with 0 in "Parking Lot" column
+df['Parking Lot'] = df['Parking Lot'].replace('-', '0', regex=True).astype(int)
+
+# 1.8 Remove the row where column "Bedroom" and "Bathroom" is '-'
+df = df[~df['Bathroom'].str.contains('-', na=False)]
+df = df[~df['Bedroom'].str.contains('-', na=False)]
+
+# 1.9 Convert "Bedroom" and "Bathroom" columns into int type
+df[['Bedroom', 'Bathroom']] = df[['Bedroom', 'Bathroom']].astype(int)
+
+# 1.10 Rearrange the columns
+rearrange_columns = ['Building Name', 'Property Type', 'Property Size_in_sq_ft', 'Bedroom', 'Bathroom',
+                     'Amount of Facilities', 'Parking Lot', 'Land Title', 'Tenure Type', 'Price_in_RM']
+df = df[rearrange_columns]
+
+# 1.11 Export to .csv
+df.to_csv('house_data_cleaned.csv', index=False)
+
+# Machine Learning
+
+# 2.1 Import .csv, remove unwanted column and check information of the data
+df = pd.read_csv('house_data_cleaned.csv')
+df = df.drop(columns=['Building Name'])
+print(df.info())
+
+# 2.2 Define features (X) and target (y)
+X = df.drop(columns='Price_in_RM')
+y = df['Price_in_RM']
+
+# 2.3 Split the data into testing sets and training sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=45)
+
+# 2.4 Preprocessing of categorical and numerical columns
+categorical_columns = ['Property Type', 'Land Title', 'Tenure Type']
+numerical_columns = ['Property Size_in_sq_ft', 'Bedroom', 'Bathroom',
+                     'Amount of Facilities', 'Parking Lot']
+
+categorical_transformer = OneHotEncoder(handle_unknown='ignore')
+numerical_transformer = StandardScaler()
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('cat', categorical_transformer, categorical_columns),
+        ('num', numerical_transformer, numerical_columns)
+    ]
+)
+
+# 2.5 Selection of Machine Learning model
+model = LinearRegression()
+
+# 2.6 Create pipeline
+my_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('model', model)])
+
+# 2.7 Fit the model with the training sets
+my_pipeline.fit(X_train, y_train)
+
+# 2.8 Identify the differences in prices (Predicted vs Actual)
+predicted_value = my_pipeline.predict(X_test)
+actual_value = y_test
+price_comparison = pd.DataFrame({'Predicted Price': predicted_value, 'Actual Price': actual_value})
+print(price_comparison)
+
+# 2.9 Evaluate the model
+mae = mean_absolute_error(actual_value, predicted_value)
+r2 = r2_score(actual_value, predicted_value)
+
+print('Mean Absolute Error: ', round(mae, 2))
+print('R2 Score: ', round(r2, 5))
+
+# 2.10 Draw scatter plot
+plt.scatter(actual_value, predicted_value, alpha=0.7, edgecolors='k')
+plt.xlabel('Actual')
+plt.ylabel('Predicted')
+plt.title('Actual vs Predicted Price')
+plt.show()
+
+# Unit Tests
+# Define the unit tests for data cleaning
+class TestDataCleaning(unittest.TestCase):
+
+    def setUp(self):
+        self.df_raw = pd.read_csv('houses.csv')
+        self.df_cleaned = clean_data(self.df_raw)
+
+    def test_drop_unwanted_columns(self):
+        df = self.df_raw.drop(columns=columns_drop)
+        self.assertEqual(df.shape[1], self.df_raw.shape[1] - len(columns_drop))
+
+    def test_extract_numerical_property_size(self):
+        df = self.df_raw.copy()
+        df['Property Size_in_sq_ft'] = df['Property Size'].str[:-6].astype(int)
+        self.assertTrue(pd.api.types.is_integer_dtype(df['Property Size_in_sq_ft']))
+
+    def test_count_facilities(self):
+        df = self.df_raw.copy()
+        df['Amount of Facilities'] = df['Facilities'].apply(lambda x: 0 if x.strip() == '-' else len(x.split(',')))
+        self.assertTrue(pd.api.types.is_integer_dtype(df['Amount of Facilities']))
+
+    def test_extract_numerical_price(self):
+        df = self.df_raw.copy()
+        df['Price_in_RM'] = df['price'].str[2:].replace(' ', '', regex=True).astype(int)
+        self.assertTrue(pd.api.types.is_integer_dtype(df['Price_in_RM']))
+
+    def test_replace_parking_lot(self):
+        df = self.df_raw.copy()
+        df['Parking Lot'] = df['Parking Lot'].replace('-', '0', regex=True).astype(int)
+        self.assertTrue(pd.api.types.is_integer_dtype(df['Parking Lot']))
+
+    def test_remove_invalid_bed_bath(self):
+        df = self.df_raw.copy()
+        df = df[~df['Bathroom'].str.contains('-', na=False)]
+        df = df[~df['Bedroom'].str.contains('-', na=False)]
+        self.assertFalse((df['Bathroom'] == '-').any())
+        self.assertFalse((df['Bedroom'] == '-').any())
+
+    def test_rearrange_columns(self):
+        df = self.df_raw.copy()
+        df = clean_data(df)
+        expected_columns = ['Building Name', 'Property Type', 'Property Size_in_sq_ft', 'Bedroom', 'Bathroom',
+                            'Amount of Facilities', 'Parking Lot', 'Land Title', 'Tenure Type', 'Price_in_RM']
+        self.assertEqual(list(df.columns), expected_columns)
+
+# Define the integration tests
+class TestPipeline(unittest.TestCase):
+    def test_pipeline_predict(self):
+        # Define features and target
+        X = df_cleaned.drop(columns='Price_in_RM')
+        y = df_cleaned['Price_in_RM']
+
+        # Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=45)
+
+        # Preprocessing of categorical and numerical columns
+        categorical_columns = ['Property Type', 'Land Title', 'Tenure Type']
+        numerical_columns = ['Property Size_in_sq_ft', 'Bedroom', 'Bathroom', 'Amount of Facilities', 'Parking Lot']
+
+        categorical_transformer = OneHotEncoder(handle_unknown='ignore')
+        numerical_transformer = StandardScaler()
+
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('cat', categorical_transformer, categorical_columns),
+                ('num', numerical_transformer, numerical_columns)
+            ]
+        )
+
+        # Selection of Machine Learning model
+        model = LinearRegression()
+
+        # Create pipeline
+        my_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('model', model)])
+
+        # Fit the model with the training sets
+        my_pipeline.fit(X_train, y_train)
+
+        # Predict with the test set
+        predicted_value = my_pipeline.predict(X_test)
+
+        # Ensure predicted values have the same shape as y_test
+        self.assertEqual(predicted_value.shape, y_test.shape)
+
+        # Ensure that prediction is a numpy array
+        self.assertIsInstance(predicted_value, np.ndarray)
+
+        # Optionally, check if the predictions are within a reasonable range
+        self.assertTrue((predicted_value > 0).all())
+
+# Run the tests
+unittest.main(argv=[''], verbosity=2, exit=False)
